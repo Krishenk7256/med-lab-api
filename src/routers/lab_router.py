@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, UploadFile, File, Form, status, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
@@ -14,15 +14,15 @@ async def upload_analysis(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ):
-    # читаем бинарник в память
+    # Читаем бинарник в память
     file_bytes = await file.read()
 
-    extracted_text = await ocr_service.extract_text_from_pdf(file_bytes)
+    extracted_text = await ocr_service.extract_text(file_bytes, file.content_type)
 
-    if not extracted_text:
-        extracted_text = "Не удалось извлечь текст из файла"
+    if extracted_text.startswith("[Ошибка]"):
+        raise HTTPException(status_code=400, detail=extracted_text)
 
-    # добавляем сырой текст в бд
+    # Добавляем сырой текст в бд
     new_report = LabReport(
         patient_name=patient_name,
         raw_text=extracted_text,
