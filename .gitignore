@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+
+# Виртуальные окружения
+.venv/
+venv/
+env/
+ENV/
+
+# Локальные переменные окружения (Пароли, ключи)
+.env
+*.env
+
+# Логи и базы данных
+*.log
+postgres_data/
+.database/
