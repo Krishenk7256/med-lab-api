@@ -5,7 +5,7 @@ from pdf2image import convert_from_bytes
 import pytesseract
 from fastapi.concurrency import run_in_threadpool
 
-from src.utils.decorators import retry, log_sync_time, log_async_time
+from src.utils.decorators import retry, log_async_time
 
 # Поддержка пдф, изображений, таблиц. Это всё синхронно, но заворачивается в тредпул
 #@log_sync_time
