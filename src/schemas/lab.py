@@ -2,6 +2,7 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
 
+
 class LabReportResponse(BaseModel):
     id: int
     patient_name: str

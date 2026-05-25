@@ -3,6 +3,7 @@ import logging
 import asyncio
 import functools
 
+
 logger = logging.getLogger("app_logger")
 
 def log_async_time(func):

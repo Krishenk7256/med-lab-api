@@ -1,4 +1,5 @@
 import io
+import logging
 import pandas as pd
 from PIL import Image
 from pdf2image import convert_from_bytes
@@ -6,28 +7,50 @@ import pytesseract
 from fastapi.concurrency import run_in_threadpool
 
 from src.utils.decorators import retry, log_async_time
+from src.exceptions import (
+    UnsupportedFileFormatError,
+    FileParsingError,
+    OCRProcessingError
+)
 
-# Поддержка пдф, изображений, таблиц. Это всё синхронно, но заворачивается в тредпул
+
+logger = logging.getLogger(__name__)
+
 #@log_sync_time
 def parse_pdf(file_bytes: bytes) -> str:
-    images = convert_from_bytes(file_bytes)
-    full_text = []
-    for image in images:
-        text = pytesseract.image_to_string(image, lang="rus+eng")
-        full_text.append(text)
-    return "".join(full_text)
+    """Парсинг PDF файла"""
+    try:
+        images = convert_from_bytes(file_bytes)
+        full_text = []
+        for image in images:
+            text = pytesseract.image_to_string(image, lang="rus+eng")
+            full_text.append(text)
+        return "".join(full_text)
+    except Exception as e:
+        logger.error(f"Сбой при парсинге PDF: {str(e)}", exc_info=True)
+        raise FileParsingError("pdf", e)
 
 #@log_sync_time
 def parse_image(file_bytes: bytes) -> str:
-    image = Image.open(io.BytesIO(file_bytes))
-    text = pytesseract.image_to_string(image, lang="rus+eng")
-    return text.strip()
+    """Парсинг изображения"""
+    try:
+        image = Image.open(io.BytesIO(file_bytes))
+        text = pytesseract.image_to_string(image, lang="rus+eng")
+        return text.strip()
+    except Exception as e:
+        logger.error(f"Сбой при парсинге изображения: {str(e)}", exc_info=True)
+        raise FileParsingError("image", e)
 
 #@log_sync_time
 def parse_table(file_bytes: bytes, is_csv = False) -> str:
-    buffer = io.BytesIO(file_bytes)
-    df = pd.read_csv(buffer) if is_csv else pd.read_excel(buffer)
-    return df.to_string(index = False)
+    """Парсинг таблиц (CSV/Excel)"""
+    try:
+        buffer = io.BytesIO(file_bytes)
+        df = pd.read_csv(buffer) if is_csv else pd.read_excel(buffer)
+        return df.to_string(index = False)
+    except Exception as e:
+        file_type = "csv" if is_csv else "excel"
+        raise FileParsingError(file_type, e)
 
 # --- КЛАСС-ФАСАД ДЛЯ РОУТЕРА ---
 class OCRService:
@@ -35,6 +58,20 @@ class OCRService:
     @retry()
     @log_async_time
     async def extract_text(file_bytes: bytes, content_type: str) -> str:
+        """
+        Извлечение текста из файла.
+
+        Args:
+            file_bytes: Бинарные данные файла
+            content_type: MIME-тип файла
+
+        Returns:
+            Извлеченный текст
+
+        Raises:
+            UnsupportedFileFormatError: Если формат не поддерживается
+            FileParsingError: Если парсинг завершился ошибкой
+        """
         try:
             match content_type:
                 case "application/pdf":
@@ -46,9 +83,15 @@ class OCRService:
                 case "text/csv":
                     return await run_in_threadpool(parse_table, file_bytes, is_csv = True)
                 case _:
-                    return f"[Ошибка]: Неподдерживаемый формат файла: {content_type}"
+                    raise UnsupportedFileFormatError(content_type)
+        except (FileParsingError, UnsupportedFileFormatError):
+            raise
         except Exception as e:
-            return f"[Ошибка обработки файла {content_type}]: {str(e)}"
+            logger.error(
+                f"Неожиданная ошибка при извлечении текста: {str(e)}",
+                exc_info=True,
+            )
+            raise OCRProcessingError(f"Неожиданная ошибка при обработке файла: {str(e)}")
 
 ocr_service = OCRService()
 

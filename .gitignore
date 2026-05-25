@@ -13,9 +13,13 @@ ENV/
 
 # Локальные переменные окружения (Пароли, ключи)
 .env
-*.env
-.idea/
-# Логи и базы данных
-*.log
-postgres_data/
-.database/
+.env.local
+.env.*.local
+.env.production.local
+!.env.example
+logs/
+uploads/
+htmlcov/
+dist/
+build/
+*.egg-info/
