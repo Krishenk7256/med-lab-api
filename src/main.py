@@ -41,7 +41,7 @@ async def api_exception_handler(request: Request, exc: APIException):
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Непредвиденная ошибка: {str(exc)} | {request.url}", exc_info=True),
+    logger.error(f"Непредвиденная ошибка: {str(exc)} | {request.url}", exc_info=True)
     error_response = ErrorResponse(
         error_code="INTERNAL_SERVER_ERROR",
         message="Внутрення ошибка сервера",

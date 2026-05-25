@@ -1,11 +1,10 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, UploadFile, File, Form, status, Query
 import logging
 
-from src.database import get_db
+
+from src.repositories.lab_repository import get_lab_repository, LabRepository
 from src.exceptions import ValidationError, FileSizeError, LabReportNotFoundError
-from src.models.lab import LabReport
-from src.schemas.lab import LabReportResponse
+from src.schemas.lab import LabReportResponse, LabReportListResponse
 from src.services.ocr_service import ocr_service
 
 
@@ -49,78 +48,139 @@ async def validate_file(file: UploadFile) -> UploadFile:
     return file
 
 
+# CREATE
 @router.post(
-    "/upload",
+    "upload",
     response_model=LabReportResponse,
     status_code=status.HTTP_201_CREATED,
-    responses={
-        400: {"description": "Ошибка валидации или парсинга файла"},
-        413: {"description": "Файл слишком большой"},
-        500: {"description": "Внутренняя ошибка сервера"},
-    },
 )
 async def upload_analysis(
-    patient_name: str = Form(...),
-    file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
+        patient_name: str = Form(...),
+        file: UploadFile = File(...),
+        repo: LabRepository = Depends(get_lab_repository),
 ):
     """
-    Загрузить медицинский анализ для распознования
-
-    - **patient_name**: ФИО пациента (макс 100 символов)
-    - **file**: Файл анализа (PDF, изображение или таблица)
+    Загрузка медицинского анализа для OCR
+    :param patient_name: Имя пациента
+    :param file: Файл анализа (PDF, image, table)
     """
     try:
         patient_name = validate_patient_name(patient_name)
         file = await validate_file(file)
-        logger.info(f"Обработка файла: {file.filename} для пациента: {patient_name}")
 
-        # Читаем файл
+        logger.info(f"Обработка файла пациента: {patient_name}")
+
         file_bytes = await file.read()
         if not file_bytes:
-            raise ValidationError("Файл пустой", detail={"field": "file"})
+            raise ValidationError("Файл пуст", detail={"field": "file"})
 
-        # Читаем молитвы чтобы текст извлёкся (или выплюнет исключение)
-        extracted_text = await ocr_service.extract_text(file_bytes, file.content_type)
+        extracted_text = ocr_service.extract_text(file_bytes, file.content_type)
 
-        # Добавляем сырой текст в бд
-        new_report = LabReport(
+        new_report = await repo.create(
             patient_name=patient_name,
             raw_text=extracted_text,
-            interpreted_result="Анализ успешно распознан. Интерпретация в процессе..."
+            interpreted_result="В процессе..."
         )
 
-        db.add(new_report)
-        await db.commit()
-        await db.refresh(new_report)
-
-        logger.info(f"Отчёт создан: ID: {new_report.id}")
+        logger.info(f"Отчёт создан: ID={new_report.id}")
         return new_report
 
     except Exception as e:
-        await db.rollback()
-        logger.error(f"Ошибка при загрузке анализов: {str(e)}", exc_info=True)
-        raise # Само поймёт
+        logger.error(f"Ошибка при загрузке анализа: {str(e)}", exc_info=True)
+        raise
 
-@router.get("/report_id", response_model=LabReportResponse)
-async def get_report(report_id: int, db: AsyncSession = Depends(get_db)):
-    """Получить отчёт по ID"""
+
+# Read single
+@router.get("/{report_id}", response_model=LabReportResponse)
+async def get_report(
+        report_id: int,
+        repo: LabRepository = Depends(get_lab_repository),
+):
+    """
+    Получить отчёт по ID
+    :param report_id: ID отчёта
+    """
+    report = await repo.get_by_id(report_id)
+
+    if not report:
+        raise LabReportNotFoundError(report_id)
+
+    return report
+
+# Read all
+@router.get("/", response_model=LabReportListResponse)
+async def list_reports(
+        skip: int = Query(0, ge=0, desciption="Количество пропущенных отчётов"),
+        limit: int = Query(10, ge=1, le=100, description="Количество нужных отчётов"),
+        search: str = Query(None, description="Поиск по имени пациента"),
+        repo: LabRepository = Depends(get_lab_repository),
+):
+    """
+    Получить список всех отчётов с пагинацией и поиском
+    :param skip: Скипнуть N отчётов
+    :param limit: Вернуть N отчётов
+    :param search: Поиск по имени пациента (Optional)
+    """
     try:
-        from sqlalchemy import select
+        if search:
+            reports = await repo.search(search, skip=skip, limit=limit)
+        else:
+            reports = await repo.get_all(skip=skip, limit=limit)
 
-        result = await db.execute(
-            select(LabReport).where(LabReport.id == report_id)
-        )
-        report = result.scalars().first()
+        return {
+            "items": reports,
+            "skip": skip,
+            "limit": limit,
+            "total": len(reports),
+        }
+
+    except Exception as e:
+        logger.error(f"Ошибка создания списка отчётов: {str(e)}", exc_info=True)
+        raise
+
+# Update
+@router.put("/{report_id}", response_model=LabReportResponse)
+async def update_report(
+        report_id: int,
+        interpreted_result: str = Form(...),
+        repo: LabRepository = Depends(get_lab_repository),
+):
+    """
+    Обновить интерпретацию отчёта
+    :param report_id: ID отчёта
+    :param interpreted_result: Новая интерпретация
+    """
+    try:
+        report = await repo.update(report_id, interpreted_result)
 
         if not report:
             raise LabReportNotFoundError(report_id)
 
+        logger.info(f"Отчёт {report_id} обновлён")
         return report
+
     except Exception as e:
-        logger.error(f"Ошибка при получении отчёта: {report_id}: {str(e)}", exc_info=True)
+        logger.error(f"Ошибка обновления отчёта: {str(e)}", exc_info=True)
         raise
 
+# Delete
+@router.delete("/{report_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_report(
+        report_id: int,
+        repo: LabRepository = Depends(get_lab_repository),
+):
+    """
+    Удалить отчёт
+    :param report_id: ID отчёта
+    """
+    try:
+        success = await repo.delete(report_id)
 
+        if not success:
+            raise LabReportNotFoundError(report_id)
 
+        logger.info(f"Отчёт {report_id} удалён")
 
+    except Exception as e:
+        logger.error(f"Ошибка при удалении отчёта: {str(e)}", exc_info=True)
+        raise
