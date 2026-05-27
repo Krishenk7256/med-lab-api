@@ -60,7 +60,7 @@ class Settings(BaseSettings):
 
     # Внешние API
     # llm_provider: str = "openai"
-    gemini_api_key: str = "AIzaSyBhCfPh7__msw4f3_lEbCH_nxaOhWd2vwM"
+    gemini_api_key: str = "some-key"
     # llm_model: str = "gpt-4"
     # llm_temperature: float = 0.7
     # llm_max_tokens: int = 500
