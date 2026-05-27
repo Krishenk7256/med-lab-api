@@ -3,54 +3,20 @@ import logging
 
 
 from src.repositories.lab_repository import get_lab_repository, LabRepository
-from src.exceptions import ValidationError, FileSizeError, LabReportNotFoundError
+from src.exceptions import LabReportNotFoundError
 from src.schemas.lab import LabReportResponse, LabReportListResponse
+from src.services.llm_service import GeminiService
 from src.services.ocr_service import ocr_service
+from src.utils.validators import validate_file
 
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/labs", tags=["Лабораторные анализы"])
 
-MAX_FILE_SIZE_MB = 50
-ALLOWED_CONTENT_TYPES = {
-    "application/pdf",
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/vnd.ms-excel",
-    "text/csv",
-}
-
-def validate_patient_name(name: str) -> str:
-    """Валидация имени пациента"""
-    if not name or len(name.strip()) == 0:
-        raise ValidationError(
-            "Имя пациента не может быть пустым",
-            detail={"field": "patient_name"},
-        )
-    if len(name) > 100:
-        raise ValidationError(
-            "Имя пациента не может быть длиннее 100 символов",
-            detail={"field": "patient_name", "max_length": 100},
-        )
-    return name.strip()
-
-async def validate_file(file: UploadFile) -> UploadFile:
-    """Валидация файла"""
-    if file.content_type not in ALLOWED_CONTENT_TYPES:
-        raise ValidationError(
-            f"Неподдерживаемый тип файла. Поддерживаемые: {', '.join(ALLOWED_CONTENT_TYPES)}",
-            detail={"content_type": file.content_type},
-        )
-    if file.size and file.size > MAX_FILE_SIZE_MB * 1024 * 1024:
-        raise FileSizeError(MAX_FILE_SIZE_MB)
-    return file
-
 
 # CREATE
 @router.post(
-    "upload",
+    "/upload",
     response_model=LabReportResponse,
     status_code=status.HTTP_201_CREATED,
 )
@@ -58,30 +24,30 @@ async def upload_analysis(
         patient_name: str = Form(...),
         file: UploadFile = File(...),
         repo: LabRepository = Depends(get_lab_repository),
+        llm_service: GeminiService = Depends()
 ):
     """
-    Загрузка медицинского анализа для OCR
+    Загрузка анализа -> OCR -> Gemini -> БД
     :param patient_name: Имя пациента
-    :param file: Файл анализа (PDF, image, table)
+    :param file: Анализ
+    :param repo: Метод Create
+    :param llm_service: Работа с GeminiService
+    :return: Готовый отчёт из БД
     """
     try:
-        patient_name = validate_patient_name(patient_name)
-        file = await validate_file(file)
+
+        await validate_file(file)
 
         logger.info(f"Обработка файла пациента: {patient_name}")
+        raw_text = await ocr_service.extract_text(file, file.content_type)
 
-        file_bytes = await file.read()
-        if not file_bytes:
-            raise ValidationError("Файл пуст", detail={"field": "file"})
-
-        extracted_text = ocr_service.extract_text(file_bytes, file.content_type)
+        structured_data = await llm_service.analyze_text(raw_text)
 
         new_report = await repo.create(
-            patient_name=patient_name,
-            raw_text=extracted_text,
-            interpreted_result="В процессе..."
+            patient_name=structured_data.patient_name,
+            raw_text=raw_text,
+            interpreted_result=structured_data.model_dump_json()
         )
-
         logger.info(f"Отчёт создан: ID={new_report.id}")
         return new_report
 
@@ -99,6 +65,7 @@ async def get_report(
     """
     Получить отчёт по ID
     :param report_id: ID отчёта
+    :param repo: Метод Get
     """
     report = await repo.get_by_id(report_id)
 
@@ -120,6 +87,7 @@ async def list_reports(
     :param skip: Скипнуть N отчётов
     :param limit: Вернуть N отчётов
     :param search: Поиск по имени пациента (Optional)
+    :param repo: Метод Create
     """
     try:
         if search:
@@ -149,6 +117,7 @@ async def update_report(
     Обновить интерпретацию отчёта
     :param report_id: ID отчёта
     :param interpreted_result: Новая интерпретация
+    :param repo: Метод Put
     """
     try:
         report = await repo.update(report_id, interpreted_result)
@@ -172,6 +141,7 @@ async def delete_report(
     """
     Удалить отчёт
     :param report_id: ID отчёта
+    :param repo: Метод Delete
     """
     try:
         success = await repo.delete(report_id)

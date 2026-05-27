@@ -41,7 +41,15 @@ class Settings(BaseSettings):
     # File upload
     max_file_size_mb: int = 50
     upload_directory: str = "./uploads"
-    allowed_extensions: str = "pdf,png,jpg,jpeg,webp,csv,xlsx,xls"
+    allowed_content_types: set[str] = {
+        "application/pdf",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+        "text/csv",
+    }
 
     # OCR service
     ocr_timeout_seconds: int = 30
@@ -52,7 +60,7 @@ class Settings(BaseSettings):
 
     # Внешние API
     # llm_provider: str = "openai"
-    # llm_api_key: str = ""
+    gemini_api_key: str = "AIzaSyBhCfPh7__msw4f3_lEbCH_nxaOhWd2vwM"
     # llm_model: str = "gpt-4"
     # llm_temperature: float = 0.7
     # llm_max_tokens: int = 500
@@ -81,12 +89,13 @@ class Settings(BaseSettings):
     class Config:
         env_file = "../.env"
         case_sensitive = False
+        extra = "ignore"
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
         if not self.database_url:
-            self.database_url (
+            self.database_url = (
                 f"postgresql+asyncpg://{self.db_user}:{self.db_password}"
                 f"@{self.db_host}:{self.db_port}/{self.db_name}"
             )
@@ -104,8 +113,9 @@ class Settings(BaseSettings):
 
     @property
     def allowed_extensions_list(self) -> List[str]:
-        """Возвращает список разрешённых расширений"""
-        return [ext.strip() for ext in self.allowed_extensions.split(",")]
+        """Возвращает список разрешённых расширений (конвертируем set в list)"""
+        return list(self.allowed_content_types)
+
 
 settings = Settings()
 
@@ -148,7 +158,7 @@ LOGGING_CONFIG = {
         "error_file": {
             "class": "logging.handlers.RotatingFileHandler",
             "formatter": settings.log_format if settings.log_format == "json" else "detailed",
-            "filename": settings.log_error_file,
+            "filename": settings.log_file,
             "maxBytes": settings.log_max_bytes,
             "backupCount": settings.log_backup_count,
             "level": "ERROR",

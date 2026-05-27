@@ -26,9 +26,9 @@ class LabRepository:
 
     # CREATE
     async def create(self,
-                     patient_name: str,
+                     patient_name: Optional[str],
                      raw_text: str,
-                     interpreted_result: Optional[str]=None,
+                     interpreted_result: str,
                      ) -> LabReport:
         """
         Создать новый отчёт в БД
@@ -40,7 +40,7 @@ class LabRepository:
         """
         try:
             report = LabReport(
-                patient_name=patient_name,
+                patient_name=patient_name or "Неизвестный пациент",
                 raw_text=raw_text,
                 interpreted_result=interpreted_result,
             )
@@ -71,7 +71,6 @@ class LabRepository:
             result = await self.db.execute(
                 select(LabReport).where(LabReport.id == report_id)
             )
-
             report = result.scalars().first()
 
             if report:
@@ -107,7 +106,7 @@ class LabRepository:
             )
             reports = result.scalars().all()
             logger.debug(f"Получено {len(reports)} отчётов")
-            return reports
+            return list(reports)
 
         except Exception as e:
             logger.error(f"Ошибка при получении отчётов: {str(e)}", exc_info=True)
@@ -138,7 +137,7 @@ class LabRepository:
             )
             reports = result.scalars().all()
             logger.info(f"Найдено {len(reports)} отчётов по запросу: '{patient_name}'")
-            return reports
+            return list(reports)
 
         except Exception as e:
             logger.error(f"Ошибка при поиске отчётов: {str(e)}", exc_info=True)
@@ -191,8 +190,6 @@ class LabRepository:
             await self.db.delete(report)
 
             await self.db.commit()
-
-            await self.db.refresh(report)
 
             logger.info(f"Удалён отчёт {report_id}")
             return True

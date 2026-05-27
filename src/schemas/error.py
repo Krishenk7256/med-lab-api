@@ -6,7 +6,7 @@ class ErrorResponse(BaseModel):
     """Стандартный формат ошибки в API"""
     error_code: str = Field(..., description="Код Ошибки")
     message: str = Field(..., description="Описание Ошибки")
-    status_code: str = Field(..., description="HTTP статус")
+    status_code: int = Field(..., description="HTTP статус")
     detail: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Дополнительные детали ошибки"
@@ -15,7 +15,7 @@ class ErrorResponse(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "error_code": "OCR_PROCESSIGN_ERROR",
+                "error_code": "OCR_PROCESSING_ERROR",
                 "message": "Ошибка при парсинге PDF: Invalid file structure",
                 "status_code": 400,
                 "detail": {

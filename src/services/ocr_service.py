@@ -1,10 +1,12 @@
 import io
 import logging
 import pandas as pd
+from pandas import DataFrame
 from PIL import Image
 from pdf2image import convert_from_bytes
 import pytesseract
 from fastapi.concurrency import run_in_threadpool
+from fastapi import UploadFile
 
 from src.utils.decorators import retry, log_async_time
 from src.exceptions import (
@@ -46,7 +48,11 @@ def parse_table(file_bytes: bytes, is_csv = False) -> str:
     """Парсинг таблиц (CSV/Excel)"""
     try:
         buffer = io.BytesIO(file_bytes)
-        df = pd.read_csv(buffer) if is_csv else pd.read_excel(buffer)
+        df: DataFrame
+        if is_csv:
+            df = pd.read_csv(buffer) # type: ignore
+        else:
+            df = pd.read_excel(buffer)
         return df.to_string(index = False)
     except Exception as e:
         file_type = "csv" if is_csv else "excel"
@@ -54,15 +60,14 @@ def parse_table(file_bytes: bytes, is_csv = False) -> str:
 
 # --- КЛАСС-ФАСАД ДЛЯ РОУТЕРА ---
 class OCRService:
-    @staticmethod
     @retry()
     @log_async_time
-    async def extract_text(file_bytes: bytes, content_type: str) -> str:
+    async def extract_text(self, file_or_bytes: UploadFile | bytes, content_type: str) -> str:
         """
         Извлечение текста из файла.
 
         Args:
-            file_bytes: Бинарные данные файла
+            file_or_bytes: Файл или бинарные данные
             content_type: MIME-тип файла
 
         Returns:
@@ -73,6 +78,15 @@ class OCRService:
             FileParsingError: Если парсинг завершился ошибкой
         """
         try:
+            # if UploadFile passed - read bytes inside service
+            if hasattr(file_or_bytes, "read"):
+                # Важно для @retry: сбрасываем указатель, если это повторная попытка
+                if hasattr(file_or_bytes, "seek"):
+                    await file_or_bytes.seek(0)
+                file_bytes = await file_or_bytes.read()
+            else:
+                file_bytes = file_or_bytes
+
             match content_type:
                 case "application/pdf":
                     return await run_in_threadpool(parse_pdf, file_bytes)

@@ -39,15 +39,23 @@ def retry(retries: int = 3, delay: float = 1.0):
     def decorator(func):
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
-            attempt = 0
-            while attempt < retries:
+            if retries <= 0:
+                raise ValueError("Количество попыток должно быть больше 0")
+
+            for attempt in range(1, retries + 1):
                 try:
                     return await func(*args, **kwargs)
                 except Exception as e:
-                    attempt += 1
                     logger.warning(f"Ошибка в {func.__name__} (Попытка {attempt}/{retries}): {e}")
+
                     if attempt >= retries:
                         raise e
+
+
                     await asyncio.sleep(delay)
+
+            raise RuntimeError("Непредвиденное завершение цикла повторных попыток")
+
+
         return wrapper
     return decorator

@@ -18,30 +18,28 @@ class APIException(Exception):
 
 class OCRProcessingError(APIException):
     """Ошибка при обработке файла OCR"""
-    def __init__(self, message: str, detail: Optional[Dict] = None):
-        super().__init__(
-            message=message,
-            status_code=400,
-            error_code="OCR_PROCESSING_ERROR",
-            detail=detail,
-        )
+    status_code = 400
+    error_code = "OCR_PROCESSING_ERROR"
+    pass
 
 class UnsupportedFileFormatError(OCRProcessingError):
     """Неподдерживаемый формат файла"""
     def __init__(self, content_type: str):
         super().__init__(
-            message=f"Неподдерживаемый формат файла: {content_type}",
-            error_code="UNSUPPORTED_FILE_FORMAT",
-            detail={"content_type": content_type},
+            f"Неподдерживаемый формат файла: {content_type}",
+            400,
+            "UNSUPPORTED_FILE_FORMAT",
+            {"content_type": content_type},
         )
 
 class FileParsingError(OCRProcessingError):
     """Ошибка при парсинге конкретного типа файла"""
     def __init__(self, file_type: str, original_error: Exception):
         super().__init__(
-            message=f"Ошибка при парсинге {file_type}: {str(original_error)}",
-            error_code="FILE_PARSING_ERROR",
-            detail={
+            f"Ошибка при парсинге {file_type}: {str(original_error)}",
+            400,
+            "FILE_PARSING_ERROR",
+            {
                 "file_type": file_type,
                 "original_error": str(original_error),
             },
@@ -85,4 +83,23 @@ class LabReportNotFoundError(APIException):
             detail={"report_id": report_id}
         )
 
+class GeminiAPIError(APIException):
+    """Ошибка при подключении к серверам Google"""
+    def __init__(self, message: str, detail: Optional[Dict[str, Any]] = None):
+        super().__init__(
+            message=message,
+            status_code=502,
+            error_code="AI_PROVIDER_ERROR",
+            detail=detail
+        )
+
+class GeminiParsingError(APIException):
+    """ИИ вернул чушь / заблокировал контент / ничего"""
+    def __init__(self, message: str, detail: Optional[Dict[str, Any]] = None):
+        super().__init__(
+            message=message,
+            status_code=422,
+            error_code="MEDICAL_PARSING_FAILED",
+            detail=detail
+        )
 

@@ -28,7 +28,7 @@ app = FastAPI(
 async def api_exception_handler(request: Request, exc: APIException):
     """Обработчик для всех APIException"""
     error_response = ErrorResponse(
-        error_code=exc.status_code,
+        error_code=exc.error_code,
         message=exc.message,
         status_code=exc.status_code,
         detail=exc.detail if exc.detail else None,
@@ -36,7 +36,7 @@ async def api_exception_handler(request: Request, exc: APIException):
     logger.warning(f"API Exception: {exc.error_code} | {exc.message} | {request.url}")
     return JSONResponse(
         status_code=exc.status_code,
-        content=error_response
+        content=error_response.model_dump(exclude_none=True),
     )
 
 @app.exception_handler(Exception)
