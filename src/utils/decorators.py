@@ -3,13 +3,14 @@ import logging
 import asyncio
 import functools
 
-
 logger = logging.getLogger("app_logger")
+
 
 def log_async_time(func):
     """
     Декоратор, который замеряет время выполнения Async функции.
     """
+
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
         start_time = time.perf_counter()
@@ -17,7 +18,9 @@ def log_async_time(func):
         execution_time = time.perf_counter() - start_time
         logger.info(f"Async функция [{func.__name__}] выполнена за {execution_time:.4f} сек.")
         return result
+
     return wrapper
+
 
 # До лучших времён
 # def log_sync_time(func):
@@ -36,6 +39,7 @@ def retry(retries: int = 3, delay: float = 1.0):
     Декоратор с параметрами.
     Повторяет выполнение async функции при падении.
     """
+
     def decorator(func):
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
@@ -51,11 +55,10 @@ def retry(retries: int = 3, delay: float = 1.0):
                     if attempt >= retries:
                         raise e
 
-
                     await asyncio.sleep(delay)
 
             raise RuntimeError("Непредвиденное завершение цикла повторных попыток")
 
-
         return wrapper
+
     return decorator
